@@ -136,3 +136,65 @@ exports.updateUserList = functions.database.ref('/users/{userId}/coords').onWrit
     // console.log(JSON.stringify(userCoords.val()));
   });
 });
+
+exports.sendVoiceNotification = functions.database.ref('/voices/{timestamp}').onWrite(event => {
+  const timestamp = event.params.timestamp;
+  // If un-follow we exit the function.
+
+
+  // Get the list of device notification tokens.
+  const getDeviceTokensPromise = admin.database().ref(`/voices/${timestamp}/to`).once('value');
+
+  const getSenderToken = admin.database().ref(`/voices/${timestamp}/from`).once('value');
+
+  return Promise.all([getDeviceTokensPromise, getSenderToken]).then(results => {
+    const tokensSnapshot = results[0];
+    const sender = results[1];
+
+
+    // Check if there are any device tokens.
+    if (!tokensSnapshot.hasChildren()) {
+      return console.log('There are no notification tokens to send to.');
+    }
+    console.log('There are', tokensSnapshot.numChildren(), 'tokens to send notifications to.');
+    console.log('Fetched follower profile', sender);
+
+    // const getMsg = admin.database().ref(`/flags/${msgFlag}`).once('value');
+
+    // const getSenderInfo = admin.database().ref(`/users/${sender}/nr`).once('value');
+
+    // Notification details.
+    const payload = {
+      notification: {
+        title: `CarCare`,
+        body: `Nowa wiadomość głosowa`,
+        tag: `${timestamp}`,
+      }
+    };
+
+    // Listing all tokens.
+    let tokens = [];
+
+    for(let key in tokensSnapshot.val()) {
+      tokens.push(tokensSnapshot.val()[key]);
+    }
+
+    // Send notifications to all tokens.
+    return admin.messaging().sendToDevice(tokens, payload).then(response => {
+      // For each message check if there was an error.
+      const tokensToRemove = [];
+      response.results.forEach((result, index) => {
+        const error = result.error;
+        if (error) {
+          console.error('Failure sending notification to', tokens[index], error);
+          // Cleanup the tokens who are not registered anymore.
+          if (error.code === 'messaging/invalid-registration-token' ||
+              error.code === 'messaging/registration-token-not-registered') {
+            tokensToRemove.push(tokensSnapshot.ref.child(tokens[index]).remove());
+          }
+        }
+      });
+      return Promise.all(tokensToRemove);
+    });
+  });
+});
