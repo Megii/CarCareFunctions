@@ -1,4 +1,4 @@
-/**
+        /**
  * Copyright 2016 Google Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,7 +59,7 @@ exports.sendFollowerNotification = functions.database.ref('/messages/{timestamp}
     // Notification details.
     const payload = {
       notification: {
-        title: `CarCare`,
+        title: `DriveCom`,
         body: `${msgFlag.val()}`,
       }
     };
@@ -166,7 +166,7 @@ exports.sendVoiceNotification = functions.database.ref('/voices/{timestamp}').on
     // Notification details.
     const payload = {
       notification: {
-        title: `CarCare`,
+        title: `DriveCom`,
         body: `Nowa wiadomość głosowa`,
         tag: `${timestamp}`,
       }
@@ -196,5 +196,58 @@ exports.sendVoiceNotification = functions.database.ref('/voices/{timestamp}').on
       });
       return Promise.all(tokensToRemove);
     });
+  });
+});
+
+exports.sendGroupInvites = functions.database.ref('/groups/{groupId}').onWrite(event => {
+  const groupId = event.params.groupId;
+
+  const ownerPromise = admin.database().ref(`/groups/${groupId}/owner`).once('value');
+  const invitedPromise = admin.database().ref(`/groups/${groupId}/invited`).once('value');
+
+  return Promise.all([ownerPromise, invitedPromise]).then(results => {
+
+    const owner = results[0];
+    const invited = results[1].val();
+    console.log('Owner', owner.val());
+    console.log('Invited ppl', invited);
+
+
+
+
+
+    const payload = {
+      notification: {
+        title: `DriveCom`,
+        body: `Nowe zaproszenie do grupy`,
+        tag: `${groupId},${owner}`,
+      }
+    };
+
+    let tokens = [];
+
+    for(let i in invited){
+      if(!invited[i].wasSend){
+        console.log('Invited person', invited[i]);
+        console.log('Invited person id', i);
+        admin.database().ref(`/groups/${groupId}/invited/${i}/wasSend`).set(true);
+        tokens.push(i);
+      }
+    }
+
+    return admin.messaging().sendToDevice(tokens, payload).then(response => {
+      // For each message check if there was an error.
+      const tokensToRemove = [];
+      response.results.forEach((result, index) => {
+        const error = result.error;
+        if (error) {
+          console.error('Failure sending notification to', tokens[index], error);
+          // Cleanup the tokens who are not registered anymore.
+
+        }
+      });
+      return Promise.all(tokensToRemove);
+    });
+
   });
 });
