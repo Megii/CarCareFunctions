@@ -42,9 +42,7 @@ exports.sendFollowerNotification = functions.database.ref('/messages/{timestamp}
     const tokensSnapshot = results[0];
     const sender = results[1];
     const msgFlag = results[2];
-
-    console.log('dupa', sender.val());
-
+4
     // Check if there are any device tokens.
     if (!tokensSnapshot.hasChildren()) {
       return console.log('There are no notification tokens to send to.');
@@ -121,16 +119,17 @@ exports.updateUserList = functions.database.ref('/users/{userId}/coords').onWrit
               id: u,
               distance: distance,
               model: usersList[u].model,
-              color: usersList[u].color,
               nr: usersList[u].nr,
               token: usersList[u].token,
             });
           }
         }
 
-        admin.database().ref(`/users/${userId}/nearby`).set(nearbyArray);
+        
       }
     }
+
+    admin.database().ref(`/users/${userId}/nearby`).set(nearbyArray);
 
     // console.log(JSON.stringify(usersList.val()));
     // console.log(JSON.stringify(userCoords.val()));
@@ -199,18 +198,61 @@ exports.sendVoiceNotification = functions.database.ref('/voices/{timestamp}').on
   });
 });
 
-exports.sendGroupInvites = functions.database.ref('/groups/{groupId}').onWrite(event => {
+exports.addMember = functions.database.ref('/groups/{groupId}/invited/{memberId}/wasAccepted').onCreate(event => {
   const groupId = event.params.groupId;
+  const memberId = event.params.memberId;
+  
+  
+  const memberData = admin.database().ref(`/users/${memberId}`).once('value');
+  const wasAccepted = admin.database().ref(`/groups/${groupId}/invited/${memberId}/wasAccepted`).once('value');
+  const membersList = admin.database().ref(`/groups/${groupId}/members`).once('value');
+
+  return Promise.all([memberData, wasAccepted, membersList]).then(results => {
+    const member = results[0].val();
+    const isAccepted = results[1].val();
+    let mList = results[2].val();
+
+    console.log('Member', member);
+    console.log('wasAccepted', isAccepted);
+    console.log('Members list', mList);
+
+    let flag = false;
+
+   /* for(m in mList){
+
+    }*/
+    if(mList == null) mList = [];
+
+    if(isAccepted  && mList.length < 6){
+      mList.push({
+        id: memberId,
+        model: member.model,
+        nr: member.nr,
+        token: member.token,
+      });
+      admin.database().ref(`/groups/${groupId}/members`).set(mList);
+    }
+  });
+});
+
+exports.sendGroupInvites = functions.database.ref('/groups/{groupId}/invited/{invitedId}').onCreate(event => {
+  const groupId = event.params.groupId;
+  const invitedId = event.params.invitedId;
 
   const ownerPromise = admin.database().ref(`/groups/${groupId}/owner`).once('value');
-  const invitedPromise = admin.database().ref(`/groups/${groupId}/invited`).once('value');
+  const wasSendPromise = admin.database().ref(`/groups/${groupId}/invited/${invitedId}/wasSend`).once('value');
+  const tokenPromise = admin.database().ref(`/users/${invitedId}/token`).once('value');
 
-  return Promise.all([ownerPromise, invitedPromise]).then(results => {
+  return Promise.all([ownerPromise, wasSendPromise, tokenPromise]).then(results => {
 
-    const owner = results[0];
-    const invited = results[1].val();
-    console.log('Owner', owner.val());
-    console.log('Invited ppl', invited);
+    const owner = results[0].val();
+    const wasSend = results[1].val();
+    const token = results[2].val();
+    console.log('Owner', owner);
+    console.log('Invited', invitedId);
+    console.log('Group ID', groupId);
+    console.log('Token', token);
+    console.log('Send?', wasSend);
 
 
 
@@ -220,20 +262,17 @@ exports.sendGroupInvites = functions.database.ref('/groups/{groupId}').onWrite(e
       notification: {
         title: `DriveCom`,
         body: `Nowe zaproszenie do grupy`,
-        tag: `${groupId},${owner}`,
+        tag: `${groupId},${owner},${invitedId}`,
       }
     };
 
     let tokens = [];
 
-    for(let i in invited){
-      if(!invited[i].wasSend){
-        console.log('Invited person', invited[i]);
-        console.log('Invited person id', i);
-        admin.database().ref(`/groups/${groupId}/invited/${i}/wasSend`).set(true);
-        tokens.push(i);
+      if(!wasSend){
+        admin.database().ref(`/groups/${groupId}/invited/${invitedId}/wasSend`).set(true);
+        tokens.push(token);
       }
-    }
+      
 
     return admin.messaging().sendToDevice(tokens, payload).then(response => {
       // For each message check if there was an error.
