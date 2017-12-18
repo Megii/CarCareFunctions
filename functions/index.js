@@ -1,18 +1,18 @@
-        /**
- * Copyright 2016 Google Inc. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/**
+* Copyright 2016 Google Inc. All Rights Reserved.
+*
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*      http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
 'use strict';
 
 const functions = require('firebase-functions');
@@ -42,7 +42,7 @@ exports.sendFollowerNotification = functions.database.ref('/messages/{timestamp}
     const tokensSnapshot = results[0];
     const sender = results[1];
     const msgFlag = results[2];
-4
+
     // Check if there are any device tokens.
     if (!tokensSnapshot.hasChildren()) {
       return console.log('There are no notification tokens to send to.');
@@ -65,7 +65,7 @@ exports.sendFollowerNotification = functions.database.ref('/messages/{timestamp}
     // Listing all tokens.
     let tokens = [];
 
-    for(let key in tokensSnapshot.val()) {
+    for (let key in tokensSnapshot.val()) {
       tokens.push(tokensSnapshot.val()[key]);
     }
 
@@ -79,7 +79,7 @@ exports.sendFollowerNotification = functions.database.ref('/messages/{timestamp}
           console.error('Failure sending notification to', tokens[index], error);
           // Cleanup the tokens who are not registered anymore.
           if (error.code === 'messaging/invalid-registration-token' ||
-              error.code === 'messaging/registration-token-not-registered') {
+            error.code === 'messaging/registration-token-not-registered') {
             tokensToRemove.push(tokensSnapshot.ref.child(tokens[index]).remove());
           }
         }
@@ -95,11 +95,11 @@ exports.updateUserList = functions.database.ref('/users/{userId}/coords').onWrit
   const getUsersList = admin.database().ref(`/users`).once('value');
   const getUserCoords = admin.database().ref(`/users/${userId}/coords`).once('value');
 
-  const radians = function(degrees) {
+  const radians = function (degrees) {
     return degrees * Math.PI / 180;
   };
 
-  const degrees = function(radians) {
+  const degrees = function (radians) {
     return radians * 180 / Math.PI;
   };
 
@@ -108,25 +108,47 @@ exports.updateUserList = functions.database.ref('/users/{userId}/coords').onWrit
     const userCoords = results[1].val();
     let nearbyArray = [];
 
-    for(let u in usersList) {
-      if(usersList[u].coords) {
-        let distance = ( 6371 * Math.acos( Math.cos( radians(userCoords.lat) ) * Math.cos( radians( usersList[u].coords.lat ) ) * Math.cos( radians( usersList[u].coords.lon ) - radians(userCoords.lon) ) + Math.sin( radians(userCoords.lat) ) * Math.sin(radians(usersList[u].coords.lat)) ) );
-        console.log(distance);
-
-        if(distance <= 3) {
-          if(userId != u) {
-            nearbyArray.push({
-              id: u,
-              distance: distance,
-              model: usersList[u].model,
-              nr: usersList[u].nr,
-              token: usersList[u].token,
-            });
+    for (let u in usersList) {
+      let nearbyArrayU = usersList[u].nearby;
+      if (userCoords.lat == "" && userCoords.lon == ""){
+        for(n in nearbyArrayU) {
+          if(nearbyArrayU[n].id == userId){
+            nearbyArrayU.splice(n);
           }
         }
+        admin.database().ref(`/users/${u}/nearby`).set(nearbyArrayU);
+      } else {
+        if (usersList[u].coords) {
+          let distance = (6371 * Math.acos(Math.cos(radians(userCoords.lat)) * Math.cos(radians(usersList[u].coords.lat)) * Math.cos(radians(usersList[u].coords.lon) - radians(userCoords.lon)) + Math.sin(radians(userCoords.lat)) * Math.sin(radians(usersList[u].coords.lat))));
+          //console.log(distance);
 
-        
-      }
+          if (distance <= 3) {
+            if (userId != u) {
+              nearbyArray.push({
+                id: u,
+                distance: distance,
+                model: usersList[u].model,
+                nr: usersList[u].nr,
+                token: usersList[u].token,
+              });
+              let userExist = false;
+              for (let n in nearbyArrayU) {
+                if (nearbyArrayU[n].id == userId) userExist = true;
+              }
+              if (!userExist) {
+                nearbyArrayU.push({
+                  id: userId,
+                  distance: distance,
+                  model: usersList[userId].model,
+                  nr: usersList[userId].nr,
+                  token: usersList[userId].token,
+                });
+                admin.database().ref(`/users/${u}/nearby`).set(nearbyArrayU);
+              }
+            }
+          }
+        }
+      }        
     }
 
     admin.database().ref(`/users/${userId}/nearby`).set(nearbyArray);
@@ -174,7 +196,7 @@ exports.sendVoiceNotification = functions.database.ref('/voices/{timestamp}').on
     // Listing all tokens.
     let tokens = [];
 
-    for(let key in tokensSnapshot.val()) {
+    for (let key in tokensSnapshot.val()) {
       tokens.push(tokensSnapshot.val()[key]);
     }
 
@@ -188,7 +210,7 @@ exports.sendVoiceNotification = functions.database.ref('/voices/{timestamp}').on
           console.error('Failure sending notification to', tokens[index], error);
           // Cleanup the tokens who are not registered anymore.
           if (error.code === 'messaging/invalid-registration-token' ||
-              error.code === 'messaging/registration-token-not-registered') {
+            error.code === 'messaging/registration-token-not-registered') {
             tokensToRemove.push(tokensSnapshot.ref.child(tokens[index]).remove());
           }
         }
@@ -201,8 +223,8 @@ exports.sendVoiceNotification = functions.database.ref('/voices/{timestamp}').on
 exports.addMember = functions.database.ref('/groups/{groupId}/invited/{memberId}/wasAccepted').onCreate(event => {
   const groupId = event.params.groupId;
   const memberId = event.params.memberId;
-  
-  
+
+
   const memberData = admin.database().ref(`/users/${memberId}`).once('value');
   const wasAccepted = admin.database().ref(`/groups/${groupId}/invited/${memberId}/wasAccepted`).once('value');
   const membersList = admin.database().ref(`/groups/${groupId}/members`).once('value');
@@ -218,12 +240,12 @@ exports.addMember = functions.database.ref('/groups/{groupId}/invited/{memberId}
 
     let flag = false;
 
-   /* for(m in mList){
+    /* for(m in mList){
+ 
+     }*/
+    if (mList == null) mList = [];
 
-    }*/
-    if(mList == null) mList = [];
-
-    if(isAccepted  && mList.length < 6){
+    if (isAccepted && mList.length < 6) {
       mList.push({
         id: memberId,
         model: member.model,
@@ -268,11 +290,11 @@ exports.sendGroupInvites = functions.database.ref('/groups/{groupId}/invited/{in
 
     let tokens = [];
 
-      if(!wasSend){
-        admin.database().ref(`/groups/${groupId}/invited/${invitedId}/wasSend`).set(true);
-        tokens.push(token);
-      }
-      
+    if (!wasSend) {
+      admin.database().ref(`/groups/${groupId}/invited/${invitedId}/wasSend`).set(true);
+      tokens.push(token);
+    }
+
 
     return admin.messaging().sendToDevice(tokens, payload).then(response => {
       // For each message check if there was an error.
