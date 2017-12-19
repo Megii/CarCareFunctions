@@ -107,17 +107,14 @@ exports.updateUserList = functions.database.ref('/users/{userId}/coords').onWrit
     const usersList = results[0].val();
     const userCoords = results[1].val();
     let nearbyArray = [];
+    console.log(userCoords);
 
     for (let u in usersList) {
-      let nearbyArrayU = usersList[u].nearby;
-      if (userCoords.lat == "" && userCoords.lon == ""){
-        for(n in nearbyArrayU) {
-          if(nearbyArrayU[n].id == userId){
-            nearbyArrayU.splice(n);
-          }
-        }
-        admin.database().ref(`/users/${u}/nearby`).set(nearbyArrayU);
-      } else {
+      let nearbyArrayU = [];
+      if (usersList[u].nearby) {
+        nearbyArrayU = usersList[u].nearby;
+      }
+      if (userCoords) {
         if (usersList[u].coords) {
           let distance = (6371 * Math.acos(Math.cos(radians(userCoords.lat)) * Math.cos(radians(usersList[u].coords.lat)) * Math.cos(radians(usersList[u].coords.lon) - radians(userCoords.lon)) + Math.sin(radians(userCoords.lat)) * Math.sin(radians(usersList[u].coords.lat))));
           //console.log(distance);
@@ -132,9 +129,12 @@ exports.updateUserList = functions.database.ref('/users/{userId}/coords').onWrit
                 token: usersList[u].token,
               });
               let userExist = false;
-              for (let n in nearbyArrayU) {
-                if (nearbyArrayU[n].id == userId) userExist = true;
+              if (nearbyArrayU) {
+                for (let n in nearbyArrayU) {
+                  if (nearbyArrayU[n].id == userId) userExist = true;
+                }
               }
+
               if (!userExist) {
                 nearbyArrayU.push({
                   id: userId,
@@ -148,7 +148,16 @@ exports.updateUserList = functions.database.ref('/users/{userId}/coords').onWrit
             }
           }
         }
-      }        
+      } else {
+        if (nearbyArrayU) {
+          for (let n in nearbyArrayU) {
+            if (nearbyArrayU[n].id == userId) {
+              nearbyArrayU.splice(n, 1);
+            }
+          }
+          admin.database().ref(`/users/${u}/nearby`).set(nearbyArrayU);
+        }
+      }
     }
 
     admin.database().ref(`/users/${userId}/nearby`).set(nearbyArray);
@@ -167,10 +176,12 @@ exports.sendVoiceNotification = functions.database.ref('/voices/{timestamp}').on
   const getDeviceTokensPromise = admin.database().ref(`/voices/${timestamp}/to`).once('value');
 
   const getSenderToken = admin.database().ref(`/voices/${timestamp}/from`).once('value');
+  const getUsersList = admin.database().ref(`/users`).once('value');
 
-  return Promise.all([getDeviceTokensPromise, getSenderToken]).then(results => {
+  return Promise.all([getDeviceTokensPromise, getSenderToken, getUsersList]).then(results => {
     const tokensSnapshot = results[0];
-    const sender = results[1];
+    const sender = results[1].val();
+    const usersList = results[2].val();
 
 
     // Check if there are any device tokens.
@@ -179,6 +190,7 @@ exports.sendVoiceNotification = functions.database.ref('/voices/{timestamp}').on
     }
     console.log('There are', tokensSnapshot.numChildren(), 'tokens to send notifications to.');
     console.log('Fetched follower profile', sender);
+    console.log('Sender model', usersList[sender].model);
 
     // const getMsg = admin.database().ref(`/flags/${msgFlag}`).once('value');
 
@@ -189,7 +201,11 @@ exports.sendVoiceNotification = functions.database.ref('/voices/{timestamp}').on
       notification: {
         title: `DriveCom`,
         body: `Nowa wiadomość głosowa`,
-        tag: `${timestamp}`,
+        tag: `0,${timestamp},${usersList[sender].model}`,
+        click_action: "notificationClick"
+      },
+      data: {
+        tag: `0,${timestamp},${usersList[sender].model}`,
       }
     };
 
@@ -257,42 +273,56 @@ exports.addMember = functions.database.ref('/groups/{groupId}/invited/{memberId}
   });
 });
 
-exports.sendGroupInvites = functions.database.ref('/groups/{groupId}/invited/{invitedId}').onCreate(event => {
+exports.sendGroupInvites = functions.database.ref('/groups/{groupId}/invited/{invitedId}/wasSend').onCreate(event => {
   const groupId = event.params.groupId;
   const invitedId = event.params.invitedId;
 
   const ownerPromise = admin.database().ref(`/groups/${groupId}/owner`).once('value');
   const wasSendPromise = admin.database().ref(`/groups/${groupId}/invited/${invitedId}/wasSend`).once('value');
   const tokenPromise = admin.database().ref(`/users/${invitedId}/token`).once('value');
+  const memberData = admin.database().ref(`/users/${invitedId}`).once('value');
+  const membersList = admin.database().ref(`/groups/${groupId}/members`).once('value');
 
-  return Promise.all([ownerPromise, wasSendPromise, tokenPromise]).then(results => {
+  return Promise.all([ownerPromise, wasSendPromise, tokenPromise, memberData, membersList]).then(results => {
 
     const owner = results[0].val();
     const wasSend = results[1].val();
     const token = results[2].val();
+    const member = results[3].val();
+    let mList = results[4].val();
     console.log('Owner', owner);
     console.log('Invited', invitedId);
     console.log('Group ID', groupId);
     console.log('Token', token);
     console.log('Send?', wasSend);
 
-
-
-
-
     const payload = {
       notification: {
         title: `DriveCom`,
         body: `Nowe zaproszenie do grupy`,
-        tag: `${groupId},${owner},${invitedId}`,
+        tag: `1,${groupId},${owner},${invitedId}`,
+        click_action: "notificationClick"
+      },
+      data: {
+        tag: `1,${groupId},${owner},${invitedId}`,
       }
     };
 
-    let tokens = [];
 
-    if (!wasSend) {
+    let tokens = [];
+    if (mList == null) mList = [];
+
+    if (!wasSend && mList.length < 6) {
       admin.database().ref(`/groups/${groupId}/invited/${invitedId}/wasSend`).set(true);
       tokens.push(token);
+      mList.push({
+        id: invitedId,
+        model: member.model,
+        nr: member.nr,
+        token: member.token,
+        wasAccepted: false,
+      });
+      admin.database().ref(`/groups/${groupId}/members`).set(mList);
     }
 
 
